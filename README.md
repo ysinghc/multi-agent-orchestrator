@@ -70,6 +70,25 @@ The first draft has no `Sources:` section, so the critic rejects it. The writer 
 
 Demonstrate the budget guard with `--max-llm-calls 3`. The run then reports `budget_exhausted` and still returns the findings it has.
 
+## Development workflow
+
+```bash
+make install            # create .venv and install the dev dependencies
+make check              # lint and tests
+make run TASK="..."     # run the agent team and print the step trace
+make trace TASK="..."   # same run, with the JSON trace written to .demo/trace.json
+```
+
+Agent instructions are versioned with the code. [`AGENTS.md`](AGENTS.md) is the shared guide for coding agents and human contributors. [`CLAUDE.md`](CLAUDE.md) imports it and adds workflow rules for the agent in this repository. `src/orchestrator/CLAUDE.md` holds rules for the graph code. The `.claude/` directory contains:
+
+- `settings.json`: pre-approved commands, commands that need confirmation, and denied file reads
+- `hooks/post_edit.py`: formats and lint-fixes each edited Python file, and reports lint errors that remain
+- `commands/`: the `/check`, `/run-task` and `/review-trace` slash commands
+- `agents/`: a read-only `graph-reviewer` and a `trace-analyst` subagent
+- `skills/add-agent-tool/`: the steps for adding a tool that workers can call
+
+Pull requests use `.github/pull_request_template.md`.
+
 ## Using Gemini on Vertex AI
 
 ```bash
