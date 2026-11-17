@@ -14,17 +14,35 @@ from orchestrator.offline import OfflineModel
 from orchestrator.runner import RunResult, run_task
 from orchestrator.tools import KnowledgeBase, calculator_tool, knowledge_tool
 
-DEFAULT_CORPUS = Path(__file__).resolve().parents[2] / "examples" / "corpus"
+DEFAULT_CORPUS = Path(__file__).resolve().parent / "corpus"  # ships inside the package
 
 
 def _model(provider: str) -> ChatModel:
     if provider == "gemini":
-        return GeminiChat(
-            model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
-            project=os.environ.get("GCP_PROJECT"),
-            location=os.environ.get("GCP_LOCATION", "us-central1"),
-        )
+        try:
+            return GeminiChat(
+                model=os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+                project=os.environ.get("GCP_PROJECT"),
+                location=os.environ.get("GCP_LOCATION", "us-central1"),
+            )
+        except Exception as exc:  # e.g. missing Google credentials
+            raise SystemExit(
+                f"Could not create the Gemini client: {exc}\n"
+                "Gemini needs the optional extra: pip install 'multi-agent-orchestrator[gcp]'\n"
+                "and credentials: set GCP_PROJECT and run gcloud auth application-default login.\n"
+                "Or run without --provider gemini to use the offline model."
+            ) from exc
     return OfflineModel()
+
+
+def _load_corpus(path: Path) -> KnowledgeBase:
+    try:
+        kb = KnowledgeBase.from_dir(path)
+    except FileNotFoundError as exc:
+        raise SystemExit(f"{exc}\nPass --corpus with a folder of .md documents.") from exc
+    if len(kb) == 0:
+        raise SystemExit(f"no .md documents found in {path}. Pass --corpus with a folder of them.")
+    return kb
 
 
 def _print_trace(result: RunResult) -> None:
@@ -53,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="print the full result as JSON")
     args = parser.parse_args(argv)
 
-    kb = KnowledgeBase.from_dir(args.corpus)
+    kb = _load_corpus(args.corpus)
     config = GraphConfig(max_llm_calls=args.max_llm_calls)
     result = run_task(
         args.task, _model(args.provider), [calculator_tool(), knowledge_tool(kb)], config

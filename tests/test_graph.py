@@ -10,7 +10,7 @@ from orchestrator.offline import OfflineModel
 from orchestrator.runner import initial_state, run_task
 from orchestrator.tools import KnowledgeBase, calculator_tool, knowledge_tool
 
-CORPUS = Path(__file__).resolve().parents[1] / "examples" / "corpus"
+CORPUS = Path(__file__).resolve().parents[1] / "src" / "orchestrator" / "corpus"
 TASK = "Compute 30 * 24 * 3 * 0.12 and summarise our autoscaling policy"
 
 

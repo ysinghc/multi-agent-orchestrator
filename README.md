@@ -43,7 +43,7 @@ flowchart TD
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest -q          # 37 tests, including pause/edit/resume and budget tests
+pytest -q          # 50 tests, including pause/edit/resume, budget and regression tests
 ruff check .
 
 orchestrate "Compute 30 * 24 * 3 * 0.12 and summarise our autoscaling policy"
@@ -116,7 +116,7 @@ src/orchestrator/
   config.py      limits and pricing
   runner.py      run_task() and structured RunResult
   cli.py         orchestrate command
-examples/corpus/ small knowledge base used by the demo
+src/orchestrator/corpus/ small knowledge base used by the demo; it ships inside the installed package
 tests/           unit tests for tools and parsing, ReAct, graph control flow, telemetry
 ```
 
@@ -127,10 +127,11 @@ tests/           unit tests for tools and parsing, ReAct, graph control flow, te
 - **Budgets live in the graph.** They are checked inside the nodes that call the model, so a caller cannot forget to set them. The ReAct step limit is clipped to the remaining call budget.
 - **Revision is bounded.** Self-reflection can loop forever on a model that never satisfies its critic. `max_revisions` makes the worst case explicit and observable through `status`.
 - **Tracing is state, not logs.** Events live in the checkpointed state, so a resumed or paused run keeps its full trace.
+- **Calculator limits are checked before computing.** Expressions are capped at 200 characters and integer results at 4,096 bits, so one tool call cannot hang the agent. Huge integers are printed in shortened form.
 
 ## Verification status
 
-- **Verified here:** lint, all 37 tests, and the offline end-to-end run, including the revision loop, budget exhaustion, step-limit finalisation and the pause/edit/resume path.
+- **Verified here:** lint, all 50 tests, and the offline end-to-end run, including the revision loop, budget exhaustion, step-limit finalisation and the pause/edit/resume path. The regression tests cover defects found in end-to-end testing: a zero budget still making a call, unsourced findings mislabelled, JSON lost after stray braces, oversized calculator results, a corpus missing from the installed package, and unclear errors for a missing corpus or Gemini credentials. A wheel installed outside the repository, and a fresh clone on Python 3.12 running the CI steps, both pass.
 - **Covered with fake clients only:** the Gemini adapter, including usage-metadata mapping. It has not been run against live Vertex AI from this repository.
 
 ## Limitations
@@ -140,3 +141,6 @@ tests/           unit tests for tools and parsing, ReAct, graph control flow, te
 - Prices in `config.py` are placeholders. Set them to your model's current list price.
 - Checkpointing uses `MemorySaver`, which is process-local. For durable pause/resume across deployments, use a SQL or Postgres checkpointer.
 - The critic and the planner are single LLM calls. A stronger setup would use an ensemble critic, or run research workers in parallel with LangGraph `Send`.
+- The knowledge-base search is lexical. It strips common suffixes and counts a document's title double, but it is not semantic, so questions that use different words from the documents will miss.
+- Budgets are checked before each call. A single call can still take the cost total past `max_cost_usd`, by up to that call's cost.
+- A model error (for example an API outage) is not retried, and it ends the run with an exception.

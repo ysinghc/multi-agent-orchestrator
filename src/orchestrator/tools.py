@@ -30,12 +30,20 @@ _BIN_OPS = {
 }
 _UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 _MAX_EXPONENT = 100
+_MAX_RESULT_BITS = 4096  # integers above this size are refused, so one call cannot hang the agent
+_MAX_EXPRESSION_CHARS = 200
+_MAX_PRINTED_DIGITS = 60
 
 
 def calculate(expression: str) -> float:
     """Evaluate arithmetic by walking the AST. Names, calls and attributes are rejected."""
+    if len(expression) > _MAX_EXPRESSION_CHARS:
+        raise ValueError("expression is too long")
     tree = ast.parse(expression.strip(), mode="eval")
-    return _eval(tree.body)
+    value = _eval(tree.body)
+    if isinstance(value, int) and value.bit_length() > _MAX_RESULT_BITS:
+        raise ValueError("result is too large")
+    return value
 
 
 def _eval(node: ast.AST) -> float:
@@ -47,10 +55,31 @@ def _eval(node: ast.AST) -> float:
         return _UNARY_OPS[type(node.op)](_eval(node.operand))
     if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
         left, right = _eval(node.left), _eval(node.right)
-        if isinstance(node.op, ast.Pow) and abs(right) > _MAX_EXPONENT:
-            raise ValueError("exponent too large")
+        _refuse_if_huge(node.op, left, right)
         return _BIN_OPS[type(node.op)](left, right)
     raise ValueError("unsupported expression")
+
+
+def _refuse_if_huge(op: ast.operator, left: float, right: float) -> None:
+    """Check the size of an integer result before computing it, not after."""
+    if isinstance(op, ast.Pow):
+        if abs(right) > _MAX_EXPONENT:
+            raise ValueError("exponent too large")
+        if isinstance(left, int) and abs(left) > 1 and right >= 0:
+            if abs(left).bit_length() * right > _MAX_RESULT_BITS:
+                raise ValueError("result is too large")
+    elif isinstance(op, ast.Mult) and isinstance(left, int) and isinstance(right, int):
+        if left.bit_length() + right.bit_length() > _MAX_RESULT_BITS:
+            raise ValueError("result is too large")
+
+
+def _format_number(value: float) -> str:
+    if isinstance(value, int):
+        digits = str(value)
+        if len(digits) > _MAX_PRINTED_DIGITS:
+            return f"{digits[:20]}... ({len(digits)} digits)"
+        return digits
+    return f"{value:g}"
 
 
 def calculator_tool() -> Tool:
@@ -59,9 +88,11 @@ def calculator_tool() -> Tool:
             value = calculate(expression)
         except ZeroDivisionError:
             return "error: division by zero", []
+        except ArithmeticError as exc:  # e.g. float overflow
+            return f"error: numerical problem ({exc})", []
         except (SyntaxError, ValueError) as exc:
             return f"error: {exc}", []
-        return f"{value:g}", []
+        return _format_number(value), []
 
     return Tool(
         "calculator",
@@ -72,6 +103,19 @@ def calculator_tool() -> Tool:
 
 _WORD = re.compile(r"[a-z0-9]+")
 _STOP = frozenset("a an and are for in is it of on or our the to what how does do with".split())
+_SUFFIXES = ("ing", "ed", "es", "s", "e")
+
+
+def _stem(word: str) -> str:
+    """Strip one common English suffix, so 'caching', 'cached' and 'cache' share a stem."""
+    for suffix in _SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            return word[: -len(suffix)]
+    return word
+
+
+def _terms(text: str) -> set[str]:
+    return {_stem(w) for w in _WORD.findall(text.lower()) if w not in _STOP}
 
 
 def _clip(text: str, limit: int) -> str:
@@ -95,15 +139,21 @@ class KnowledgeBase:
 
     @classmethod
     def from_dir(cls, path: str | Path) -> KnowledgeBase:
-        docs = {p.stem: p.read_text(encoding="utf-8") for p in sorted(Path(path).glob("*.md"))}
+        directory = Path(path)
+        if not directory.is_dir():
+            raise FileNotFoundError(f"knowledge base directory not found: {directory}")
+        docs = {p.stem: p.read_text(encoding="utf-8") for p in sorted(directory.glob("*.md"))}
         return cls(docs)
 
+    def __len__(self) -> int:
+        return len(self._documents)
+
     def search(self, query: str, k: int = 1) -> list[tuple[str, str]]:
-        terms = {t for t in _WORD.findall(query.lower()) if t not in _STOP}
+        """Rank documents by shared stems. A match in the document id (its title) counts double."""
+        terms = _terms(query)
         scored = []
         for doc_id, text in self._documents.items():
-            words = set(_WORD.findall(text.lower()))
-            score = len(terms & words)
+            score = len(terms & _terms(text)) + 2 * len(terms & _terms(doc_id))
             if score:
                 scored.append((score, doc_id, text))
         scored.sort(key=lambda item: (-item[0], item[1]))

@@ -107,7 +107,7 @@ class OfflineModel:
             text = re.sub(r"\s*\(sources?: [^)]*\)", "", finding)
             lines.append(f"- {text} [{index}]")
             found = re.search(r"\(sources?: ([^)]*)\)", finding)
-            sources.append(found.group(1) if found else "calculation")
+            sources.append(found.group(1) if found else "none")
         if "Sources" in feedback:
             lines.append("")
             lines.append("Sources:")

@@ -37,11 +37,11 @@ Run these from the repository root. `make install` creates `.venv` once.
 - `telemetry.py`: `step_event` and `summarize`.
 - `runner.py`: `run_task`, `RunResult`, `initial_state`.
 - `cli.py`: the `orchestrate` command.
-- `examples/corpus/`: the knowledge base used by the demo.
+- `src/orchestrator/corpus/`: the knowledge base used by the demo. It ships inside the package, so `--corpus` is only needed for your own documents.
 
 ## Invariants: do not break these
 
-1. **Budget before every model call.** A node that calls the model checks `over_budget` first and degrades without calling when the budget is spent. The planner is the only exception, because it runs first.
+1. **Budget before every model call.** Every node that calls the model, the planner included, checks `over_budget` first and degrades without calling when the budget is spent. A zero budget therefore makes zero model calls.
 2. **Reducers for accumulating state.** `findings`, `events`, `llm_calls`, `cost_usd`, and the ReAct keys `scratchpad`, `sources` and `steps` are declared with reducers in `state.py`. Never overwrite them with a plain assignment.
 3. **Every node emits a trace event** built with `step_event`. A step that calls the model passes the response usage, so it is counted. A graph test checks that the trace call count matches the expected control flow.
 4. **Every loop is bounded.** ReAct stops at `max_react_steps`, clipped to the remaining call budget. Revisions stop at `max_revisions`. Subtasks stop at `max_subtasks`. A new loop needs a bound and a test that reaches it.
@@ -77,3 +77,6 @@ Run these from the repository root. `make install` creates `.venv` once.
 - Checkpointing uses `MemorySaver`, which lives in one process.
 - The prices in `config.py` are placeholders.
 - Research workers run one after another. LangGraph `Send` fan-out is not implemented yet.
+- The knowledge-base search is lexical with light suffix stemming, not semantic.
+- The calculator refuses expressions over 200 characters and integer results over 4,096 bits. Raise either limit only with a test that shows the cost.
+- A model error is not retried and ends the run with an exception.

@@ -48,6 +48,16 @@ def build_graph(
 
     def plan(state: OrchestratorState) -> dict[str, Any]:
         started = perf_counter()
+        if over_budget(state):  # the budget applies to the planner too; fall back to the raw task
+            skipped = step_event(
+                "plan.skipped", "supervisor", started, perf_counter(), None, cfg.pricing
+            )
+            return {
+                "plan": [state["task"]],
+                "cursor": 0,
+                "status": "budget_exhausted",
+                "events": [skipped],
+            }
         response = llm.complete(prompts.PLANNER, f"Task: {state['task']}")
         subtasks = parse_plan(response.text, cfg.max_subtasks) or [state["task"]]
         event = step_event(
@@ -207,6 +217,11 @@ def build_graph(
             approved = state.get("critique", {}).get("approved", False)
             status = "completed" if approved else "revision_limit"
         answer = state.get("draft") or "\n".join(f"- {f}" for f in state.get("findings", []))
+        if not answer.strip():
+            answer = (
+                f"No answer was produced: the run stopped with status '{status}' before any "
+                "research or drafting finished. Raise the call budget and try again."
+            )
         event = step_event(
             "finish", "supervisor", started, perf_counter(), None, cfg.pricing, status=status
         )

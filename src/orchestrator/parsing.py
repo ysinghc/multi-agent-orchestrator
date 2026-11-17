@@ -5,17 +5,21 @@ from __future__ import annotations
 import json
 from typing import Any
 
+_DECODER = json.JSONDecoder()
+
 
 def parse_json_object(text: str) -> dict[str, Any] | None:
-    """Return the first top-level JSON object found in `text`, or None."""
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        value = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
+    """Return the first JSON object in `text`, skipping stray braces in surrounding prose."""
+    index = text.find("{")
+    while index != -1:
+        try:
+            value, _ = _DECODER.raw_decode(text, index)
+        except json.JSONDecodeError:
+            value = None
+        if isinstance(value, dict):
+            return value
+        index = text.find("{", index + 1)
+    return None
 
 
 def parse_plan(text: str, limit: int) -> list[str]:
