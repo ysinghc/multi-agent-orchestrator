@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-agent-orchestrator"
+version = "0.1.0"
+description = "Hierarchical multi-agent system on LangGraph: ReAct workers, self-reflection, checkpointed state, budgets and per-step tracing."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["langgraph>=1.0"]
+
+[project.optional-dependencies]
+gcp = ["google-genai>=1.0"]
+dev = ["pytest>=8", "ruff>=0.6", "google-genai>=1.0"]
+
+[project.scripts]
+orchestrate = "orchestrator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
